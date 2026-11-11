@@ -132,7 +132,7 @@ def render_seasonal_maps(csv_path: Path, output_dir: Path) -> None:
             mpatches.Patch(
                 facecolor=COLOR_MAP["Kinematic Outliers (Cluster -1 Noise)"],
                 edgecolor="white",
-                alpha=0.65,
+                alpha=0.60,
                 label="Kinematic Outliers (Cluster -1 Noise)",
             ),
         ]
@@ -147,7 +147,7 @@ def render_seasonal_maps(csv_path: Path, output_dir: Path) -> None:
 
         ax.set_title(plot_title, fontsize=13, fontweight="bold", pad=12)
         ax.set_xlabel("Longitude (°E)", fontsize=10)
-        ax.set_ylabel("Latitude (°N)", fontsize=10)
+        ax.set_ylabel("Latitude (°)", fontsize=10)
         ax.set_xlim([MIN_LON, MAX_LON])
         ax.set_ylim([MIN_LAT, MAX_LAT])
         ax.grid(True, linestyle="--", linewidth=0.35, alpha=0.55)

@@ -3,7 +3,7 @@
 Performs a rigorous comparative benchmark between:
   1. Baseline: Traditional Eager Pandas Join & Cube Roll-Up (SQL -> Pandas -> GroupBy -> NumPy)
   2. Proposed: Vectorized Columnar Pushdown with Apache Arrow Zero-Copy & Polars
-     (DuckDB -> Arrow IPC -> Polars Lazy Streaming)
+     (DuckDB -> Arrow Zero-Copy -> Polars DataFrame)
 
 Methodology:
   - OS process priority elevated to High to minimize kernel scheduling jitter.
@@ -60,20 +60,27 @@ def get_rss_mb() -> float:
     return psutil.Process(os.getpid()).memory_info().rss / (1024 * 1024)
 
 
+def _resolve_table_prefix(con: duckdb.DuckDBPyConnection) -> str:
+    """Return 'uts_' if 'uts_fact_gfw' exists in the database, else ''."""
+    tables = {row[0] for row in con.execute("SHOW TABLES;").fetchall()}
+    return "uts_" if "uts_fact_gfw" in tables else ""
+
+
 def run_pandas_baseline(con: duckdb.DuckDBPyConnection) -> int:
     """Baseline: Traditional Eager Pandas Join & In-Memory Cube Roll-Up."""
+    prefix = _resolve_table_prefix(con)
     df_pd = con.sql(
         f"""
         SELECT l.h3_res6 AS hex_id, w.tahun, w.bulan, fl.nama_flag, g.nama_geartype,
                f.hours, f.fishing_hours, f.mmsi_present
-        FROM fact_gfw f
-        JOIN dim_lokasi l ON f.lokasi_key = l.lokasi_key
-        JOIN dim_waktu w ON f.waktu_key = w.waktu_key
-        JOIN dim_gear g ON f.gear_key = g.gear_key
-        JOIN dim_flag fl ON f.flag_key = fl.flag_key
+        FROM {prefix}fact_gfw f
+        JOIN {prefix}dim_lokasi l ON f.lokasi_key = l.lokasi_key
+        JOIN {prefix}dim_waktu w ON f.waktu_key = w.waktu_key
+        JOIN {prefix}dim_gear g ON f.gear_key = g.gear_key
+        JOIN {prefix}dim_flag fl ON f.flag_key = fl.flag_key
         WHERE l.grid_lat BETWEEN {MIN_LAT} AND {MAX_LAT}
           AND l.grid_lon BETWEEN {MIN_LON} AND {MAX_LON}
-          AND f.fishing_hours >= 0 AND f.fishing_hours <= f.hours
+          AND f.hours > 0 AND f.fishing_hours >= 0 AND f.fishing_hours <= f.hours
         """
     ).df()
 
@@ -103,6 +110,7 @@ def run_pandas_baseline(con: duckdb.DuckDBPyConnection) -> int:
 
 def run_duckdb_polars_proposed(con: duckdb.DuckDBPyConnection) -> int:
     """Proposed Target: Vectorized DuckDB Pushdown + Apache Arrow Zero-Copy + Polars."""
+    prefix = _resolve_table_prefix(con)
     df_pl = con.sql(
         f"""
         SELECT 
@@ -116,14 +124,14 @@ def run_duckdb_polars_proposed(con: duckdb.DuckDBPyConnection) -> int:
             CASE WHEN fl.nama_flag = 'IDN' THEN 'IDN_Fleet' ELSE 'Non_IDN_Fleet' END AS fleet_category,
             SUM(f.hours) AS presence_hours,
             SUM(f.fishing_hours) AS fishing_hours
-        FROM fact_gfw f
-        JOIN dim_lokasi l ON f.lokasi_key = l.lokasi_key
-        JOIN dim_waktu w ON f.waktu_key = w.waktu_key
-        JOIN dim_gear g ON f.gear_key = g.gear_key
-        JOIN dim_flag fl ON f.flag_key = fl.flag_key
+        FROM {prefix}fact_gfw f
+        JOIN {prefix}dim_lokasi l ON f.lokasi_key = l.lokasi_key
+        JOIN {prefix}dim_waktu w ON f.waktu_key = w.waktu_key
+        JOIN {prefix}dim_gear g ON f.gear_key = g.gear_key
+        JOIN {prefix}dim_flag fl ON f.flag_key = fl.flag_key
         WHERE l.grid_lat BETWEEN {MIN_LAT} AND {MAX_LAT}      
           AND l.grid_lon BETWEEN {MIN_LON} AND {MAX_LON}
-          AND f.fishing_hours >= 0 AND f.fishing_hours <= f.hours
+          AND f.hours > 0 AND f.fishing_hours >= 0 AND f.fishing_hours <= f.hours
         GROUP BY 1, 2, 3
         """
     ).pl()

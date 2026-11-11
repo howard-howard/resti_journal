@@ -26,9 +26,27 @@ from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import StandardScaler
 
 try:
-    from .config import DB_PATH, FEATURE_COLUMNS, HDBSCAN_PARAMS, ZONES_CSV_PATH
+    from .config import (
+        DB_PATH,
+        FEATURE_COLUMNS,
+        HDBSCAN_PARAMS,
+        MAX_LAT,
+        MAX_LON,
+        MIN_LAT,
+        MIN_LON,
+        ZONES_CSV_PATH,
+    )
 except ImportError:
-    from config import DB_PATH, FEATURE_COLUMNS, HDBSCAN_PARAMS, ZONES_CSV_PATH
+    from config import (
+        DB_PATH,
+        FEATURE_COLUMNS,
+        HDBSCAN_PARAMS,
+        MAX_LAT,
+        MAX_LON,
+        MIN_LAT,
+        MIN_LON,
+        ZONES_CSV_PATH,
+    )
 
 
 def load_seasonal_spatiotemporal_cube(db_path) -> pl.DataFrame:
@@ -39,8 +57,47 @@ def load_seasonal_spatiotemporal_cube(db_path) -> pl.DataFrame:
         tables = [t[0] for t in con.execute("SHOW TABLES;").fetchall()]
         if "wpp711_stc_h3_flag" in tables:
             df_raw = con.sql("SELECT * FROM wpp711_stc_h3_flag").pl()
+        elif "fact_gfw" in tables or "uts_fact_gfw" in tables:
+            prefix = "uts_" if "uts_fact_gfw" in tables and "fact_gfw" not in tables else ""
+            df_raw = con.sql(
+                f"""
+                SELECT
+                    l.h3_res6 AS hex_id,
+                    w.tahun,
+                    w.bulan,
+                    CASE
+                        WHEN w.bulan IN (12, 1, 2) THEN 'West_Monsoon'
+                        WHEN w.bulan IN (3, 4, 5) THEN 'Transition_1'
+                        WHEN w.bulan IN (6, 7, 8) THEN 'East_Monsoon'
+                        ELSE 'Transition_2'
+                    END AS monsoon_season,
+                    CASE
+                        WHEN fl.nama_flag = 'IDN' THEN 'IDN_Fleet'
+                        ELSE 'Non_IDN_Fleet'
+                    END AS fleet_category,
+                    g.nama_geartype,
+                    SUM(f.hours) AS total_presence_hours,
+                    SUM(f.fishing_hours) AS total_fishing_hours,
+                    COUNT(*) AS vessel_days_count,
+                    CASE
+                        WHEN SUM(f.hours) > 0 THEN (SUM(f.hours) - SUM(f.fishing_hours)) / SUM(f.hours)
+                        ELSE 0.0
+                    END AS loitering_ratio
+                FROM {prefix}fact_gfw f
+                JOIN {prefix}dim_lokasi l ON f.lokasi_key = l.lokasi_key
+                JOIN {prefix}dim_waktu w ON f.waktu_key = w.waktu_key
+                JOIN {prefix}dim_gear g ON f.gear_key = g.gear_key
+                JOIN {prefix}dim_flag fl ON f.flag_key = fl.flag_key
+                WHERE l.grid_lat BETWEEN {MIN_LAT} AND {MAX_LAT}
+                  AND l.grid_lon BETWEEN {MIN_LON} AND {MAX_LON}
+                  AND f.hours > 0 AND f.fishing_hours >= 0 AND f.fishing_hours <= f.hours
+                GROUP BY 1, 2, 3, 4, 5, 6
+                """
+            ).pl()
         else:
-            raise KeyError(f"Expected table 'wpp711_stc_h3_flag' not found in database. Available: {tables}")
+            raise KeyError(
+                f"Expected table 'wpp711_stc_h3_flag' or star-schema tables not found in database. Available: {tables}"
+            )
 
     print(f"Loaded {df_raw.height:,} raw seasonal cube records.")
 
