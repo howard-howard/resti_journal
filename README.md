@@ -119,7 +119,7 @@ erDiagram
 | **`dim_waktu`** | Temporal Dimension | Primary Key `waktu_key`, full calendar date (`date`), calendar `tahun`, `bulan`, and climatological `monsoon_season` classification. |
 | **`dim_gear`** | Operational Gear Dimension | Primary Key `gear_key`, gear classification (`nama_geartype`: purse seiners, trawlers, longliners, etc.). |
 | **`dim_flag`** | Geopolitical Flag Dimension | Primary Key `flag_key`, ISO country code (`nama_flag`), and fleet classification (`fleet_category`: `IDN_Fleet` vs `Non_IDN_Fleet`). |
-| **`wpp711_stc_h3_flag`** | Materialized Spatio-Temporal Cube | Pre-aggregated 134,822 records indexed by `(hex_id, monsoon_season, fleet_category)` with sum of `total_presence_hours` and `total_fishing_hours` for high-throughput analytical reads. |
+| **`wpp711_stc_h3_flag`** | Materialized Spatio-Temporal Cube | Pre-aggregated spatio-temporal cube indexed by `(hex_id, monsoon_season, fleet_category)` with sum of `total_presence_hours` and `total_fishing_hours` for high-throughput analytical reads. |
 
 ---
 
